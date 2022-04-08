@@ -1,4 +1,3 @@
-//try try
 
 #include <mbed.h>
 #include <stdint.h>
