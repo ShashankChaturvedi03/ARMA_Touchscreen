@@ -5,4 +5,4 @@ The code does not contain header files due to an include error. Hence all the de
 I will fix this once the screen starts to work. 
 
 
-I am also uploading the repository uploaded by the manufacturer which I am using as a reference. 
+The folder "EVE-Basic-Demo-STM32-master" contains the repository uploaded by the manufacturer which I am using as a reference. 
