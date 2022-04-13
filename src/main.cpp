@@ -5,9 +5,10 @@
 #include <string.h>
 #include <stdbool.h>
 
-//SPI spi(PE_14,PE_13,PE_12); //mosi,miso,sclk  
-SPI spi(PE_6,PE_5,PE_2);
+SPI spi(PE_14,PE_13,PE_12); //mosi,miso,sclk  
+//SPI spi(PE_6,PE_5,PE_2);
 DigitalOut cs(PC_14);       //Chip select
+DigitalOut pd(PC_15);
 
 // Memory base addresses
 #define RAM_REG                  0x302000   //Offset
@@ -213,6 +214,26 @@ uint16_t FifoWriteLocation = 0;
 #define REG_CMDB_WRITE            0x578
 #define REG_COPRO_PATCH_PTR       0x7162
 
+// Miscellaneous Registers - FT81x Series Programmers Guide Section 3.6 - Document inspecific about base address
+// Addresses assumed to be defined as offsets from the base address called RAM_REG and located at 0x302000
+#define REG_CPU_RESET             0x20
+#define REG_PWM_DUTY              0xD4
+#define REG_PWM_HZ                0xD0
+#define REG_INT_MASK              0xB0
+#define REG_INT_EN                0xAC
+#define REG_INT_FLAGS             0xA8
+#define REG_GPIO                  0x94
+#define REG_GPIO_DIR              0x90
+#define REG_GPIOX                 0x9C
+#define REG_GPIOX_DIR             0x98
+#define REG_FREQUENCY             0x0C
+#define REG_CLOCK                 0x08
+#define REG_FRAMES                0x04
+#define REG_ID                    0x00
+#define REG_TRIM                  0x10256C
+#define REG_SPI_WIDTH             0x180
+#define REG_CHIP_ID               0xC0000   // Temporary Chip ID location in RAMG
+
 
 static uint32_t Width;
 static uint32_t Height;
@@ -394,6 +415,8 @@ void chip_wake(){
     return ;
 
   }
+
+
 void init_screen(){
   int DWIDTH;
 	int DHEIGHT;
@@ -415,7 +438,8 @@ void init_screen(){
 	int CSPREAD;
 	int DITHER;
 
-  	DWIDTH = 800;
+  	/*
+    DWIDTH = 800;
 		DHEIGHT = 480;
 		PIXVOFFSET = 0;
 		PIXHOFFSET = 0;
@@ -427,12 +451,34 @@ void init_screen(){
 		VOFFSET = 32;
 		VSYNC0 = 0;
 		VSYNC1 = 3;
-		PCLK = 2;
+		PCLK = 2; //changed from 2
 		SWIZZLE = 0;
 		PCLK_POL = 1;
 		HSIZE = 800;
 		VSIZE = 480;
 		CSPREAD = 0;
+		DITHER = 1;
+
+    */
+
+   	DWIDTH = 480;
+		DHEIGHT = 272;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 548;
+		HOFFSET = 43;
+		HSYNC0 = 0;
+		HSYNC1 = 41;
+		VCYCLE = 292;
+		VOFFSET = 12;
+		VSYNC0 = 0;
+		VSYNC1 = 10;
+		PCLK = 2; //changed from 2
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 800;
+		VSIZE = 480;
+		CSPREAD = 1;
 		DITHER = 1;
 
     uint8_t Width = DWIDTH;
@@ -452,18 +498,24 @@ void init_screen(){
     wr16(REG_VOFFSET + RAM_REG, VOFFSET);       // Set V_OFFSET to 12
     wr16(REG_VSYNC0 + RAM_REG, VSYNC0);         // Set V_SYNC_0 to 0
     wr16(REG_VSYNC1 + RAM_REG, VSYNC1);         // Set V_SYNC_1 to 10
-    wr8(REG_SWIZZLE + RAM_REG, SWIZZLE);        // Set SWIZZLE to 0
+    wr8(REG_SWIZZLE + RAM_REG, 0);        // Set SWIZZLE to 0 change 0 to swizzle
     wr8(REG_PCLK_POL + RAM_REG, PCLK_POL);      // Set PCLK_POL to 1
     wr16(REG_HSIZE + RAM_REG, HSIZE);           // Set H_SIZE to 480
     wr16(REG_VSIZE + RAM_REG, VSIZE);           // Set V_SIZE to 272
     wr8(REG_CSPREAD + RAM_REG, CSPREAD);        // Set CSPREAD to 1    (32 bit register - write only 8 bits)
-    wr8(REG_DITHER + RAM_REG, DITHER);          // Set DITHER to 1     (32 bit register - write only 8 bits)
+    //wr8(REG_DITHER + RAM_REG, DITHER);          // Set DITHER to 1     (32 bit register - write only 8 bits)
+
+
 
     wr32(RAM_DL+0, CLEAR_COLOR_RGB(0,0,0));
     wr32(RAM_DL+4, CLEAR(1,1,1));
     wr32(RAM_DL+8, DISPLAY());
+
     wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);          // swap display lists
-    wr8(REG_PCLK + RAM_REG, PCLK);                       // after this display is visible on the LCD
+   
+       wr16(REG_GPIOX_DIR + RAM_REG, 0x8000);             // Set Disp GPIO Direction 
+    wr16(REG_GPIOX + RAM_REG, 0x8000);                 // Enable Disp (if used)
+    wr8(REG_PCLK + RAM_REG, 5);                       // after this display is visible on the LCD
 
 }
 void UpdateFIFO(void)
@@ -474,7 +526,7 @@ void MakeScreen_MatrixOrbital(uint8_t DotSize)
 {
 	Send_CMD(CMD_DLSTART);                  // Start a new display list
 	Send_CMD(CLEAR_COLOR_RGB(0, 0, 0));     // Determine the clear screen color
-	Send_CMD(CLEAR(1, 1, 1));	            // Clear the screen and the curren display list
+	Send_CMD(CLEAR(1, 1, 1));	            // Clear the screen and the current display list
 	Send_CMD(TAG(1));                       // Tag the blue dot with a touch ID
 	Send_CMD(COLOR_RGB(0, 0, 0));           // change colour to black
 	Send_CMD(BEGIN(RECTS));                 // start drawing point
@@ -492,23 +544,47 @@ void MakeScreen_MatrixOrbital(uint8_t DotSize)
 	UpdateFIFO();                            // Trigger the CoProcessor to start processing the FIFO
 }
 
+
+void set_clockext(){
+
+  cs = 0;
+
+  spi.write(0x44);
+  spi.write(0x00);
+  spi.write(0x00);
+  
+  wait_us(30000);
+
+  cs = 1;
+
+
+}
 int main() {
 
  spi.format(8,0);
  spi.frequency(10000000);
 
   chip_wake();
-
+  wait_us(30000);
+  set_clockext();
+  wait_us(30000);
   cs = 0;
   volatile uint8_t check_id = rd8(0x302000);
     if(check_id == 0x7C){
+      pd = 1;
       init_screen();
     }
-    MakeScreen_MatrixOrbital(20);
+ //  MakeScreen_MatrixOrbital(20);
 
 cs = 1;
 
   while(1) {
+
+        Send_CMD(COLOR_RGB(80, 26, 192));   
+        wait_us(5000);
+        wr32(RAM_REG + RAM_DL,COLOR_RGB(26,54,255));
+        //wr32(RAM_REG + RAM_DL, CLEAR(1,1,1));
+
         wait_us(5000);
   }
 }
