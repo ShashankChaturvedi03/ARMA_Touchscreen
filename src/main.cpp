@@ -5,8 +5,11 @@
 #include <string.h>
 #include <stdbool.h>
 
-SPI spi(PE_14,PE_13,PE_12); //mosi,miso,sclk  
-//SPI spi(PE_6,PE_5,PE_2);
+//SPI spi(PE_14,PE_13,PE_12); //mosi,miso,sclk  
+SPI spi(PE_6,PE_5,PE_2); //mosi,miso,sclk
+
+
+
 DigitalOut cs(PC_14);       //Chip select
 DigitalOut pd(PC_15);
 
@@ -233,6 +236,16 @@ uint16_t FifoWriteLocation = 0;
 #define REG_TRIM                  0x10256C
 #define REG_SPI_WIDTH             0x180
 #define REG_CHIP_ID               0xC0000   // Temporary Chip ID location in RAMG
+
+// Touch Screen Engine Registers - FT81x Series Programmers Guide Section 3.3
+// Addresses defined as offsets from the base address called RAM_REG and located at 0x302000
+#define REG_TOUCH_CONFIG          0x168
+#define REG_TOUCH_TRANSFORM_A     0x150
+#define REG_TOUCH_TRANSFORM_B     0x154
+#define REG_TOUCH_TRANSFORM_C     0x158
+#define REG_TOUCH_TRANSFORM_D     0x15C
+#define REG_TOUCH_TRANSFORM_E     0x160
+#define REG_TOUCH_TRANSFORM_F     0x164
 
 
 static uint32_t Width;
@@ -487,7 +500,7 @@ void init_screen(){
     uint8_t VOffset = PIXVOFFSET;
     
 
-    wr32(0x30200C,0x989680); //Set Clock Frequency
+    wr32(0x30200C,0x3938700); //Set Clock Frequency
 
 
     wr16(REG_HCYCLE + RAM_REG, HCYCLE);         // Set H_Cycle to 548
@@ -559,32 +572,157 @@ void set_clockext(){
 
 
 }
+
+
+
+
 int main() {
 
  spi.format(8,0);
- spi.frequency(10000000);
+ spi.frequency(12000000);
+ int PCLK = 2;
+
+ pd = 1;
 
   chip_wake();
   wait_us(30000);
   set_clockext();
   wait_us(30000);
+
   cs = 0;
-  volatile uint8_t check_id = rd8(0x302000);
-    if(check_id == 0x7C){
-      pd = 1;
-      init_screen();
-    }
- //  MakeScreen_MatrixOrbital(20);
+  volatile uint8_t check_id =0 ;
+  check_id =  rd8(0x302000);
+
+  while (check_id != 0x7C){
+     check_id =  rd8(0x302000);
+    wait_us(100);
+  }
+
+   wr32(0x30200C,0x3938700); //Set Clock Frequency
+  
+  int paddle = 0;
+  paddle = rd16(REG_CMD_READ + RAM_REG);
+
+  if (rd16(REG_CMD_READ + RAM_REG) == 0xFFF)
+	{
+		// Eve is unhappy - needs a paddling.
+		uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
+		wr8(REG_CPU_RESET + RAM_REG, 1);
+		wr16(REG_CMD_READ + RAM_REG, 0);
+		wr16(REG_CMD_WRITE + RAM_REG, 0);
+		wr16(REG_CMD_DL + RAM_REG, 0);
+		wr8(REG_CPU_RESET + RAM_REG, 0);
+		wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+	}
+
+  // turn off screen output during startup
+	wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
+	wr8(REG_PCLK + RAM_REG, 0);              // Pixel Clock Output disabled
+
+wr16(RAM_REG + REG_HCYCLE, 928); 
+wr16(RAM_REG + REG_HOFFSET, 43);
+wr16(RAM_REG + REG_HSYNC0, 0);
+wr16(RAM_REG + REG_HSYNC1, 41);
+wr16(RAM_REG + REG_VCYCLE, 525); 
+wr16(RAM_REG + REG_VOFFSET, 12);
+wr16(RAM_REG + REG_VSYNC0, 0);
+wr16(RAM_REG + REG_VSYNC1, 10);
+wr8(RAM_REG + REG_SWIZZLE, 0);
+wr8(RAM_REG + REG_PCLK_POL, 1);
+wr8(RAM_REG + REG_CSPREAD, 1);
+wr16(RAM_REG + REG_HSIZE, 800); 
+wr16(RAM_REG + REG_VSIZE, 480);
+
+
+  
+wr16(REG_GPIOX_DIR + RAM_REG, 0x8000);             // Set Disp GPIO Direction 
+wr16(REG_GPIOX + RAM_REG, 0x8000);                 // Enable Disp (if used)
+
+  wr16(REG_PWM_HZ + RAM_REG, 0x00FA);                // Backlight PWM frequency
+  wr8(REG_PWM_DUTY + RAM_REG, 120);                  // Backlight PWM duty (on)
+
+   wr32(RAM_DL+0, CLEAR_COLOR_RGB(0,0,0));
+  wr32(RAM_DL+4, CLEAR(1,1,1));
+  wr32(RAM_DL+8, DISPLAY());
+
+  wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);          // swap display lists
+  wr8(REG_PCLK + RAM_REG, 2);                       // after this display is visible on the LCD
+
+  wr32(REG_ROTATE + RAM_REG,0 ); // Rotation
+
+
+  //Touch config
+
+  wr16(REG_TOUCH_CONFIG + RAM_REG, 0x8381);
+
+  
+ 
+
+
+
+  // if(check_id == 0x7C){
+    
+  //   pd = 1; 
+   //init_screen();
+  // }
+  //MakeScreen_MatrixOrbital(20);
+
+
+ 
 
 cs = 1;
 
   while(1) {
 
-        Send_CMD(COLOR_RGB(80, 26, 192));   
-        wait_us(5000);
-        wr32(RAM_REG + RAM_DL,COLOR_RGB(26,54,255));
+        // Send_CMD(COLOR_RGB(20, 100, 192));   
+        // wait_us(5000);
+        // wr32(RAM_REG + RAM_DL,COLOR_RGB(26,54,255));
         //wr32(RAM_REG + RAM_DL, CLEAR(1,1,1));
+        cs = 0;
 
-        wait_us(5000);
+        // wr32(RAM_DL + 0, CLEAR(1, 1, 1));
+        //  wr32(RAM_DL + 4, COLOR_RGB(160, 22, 22));
+        //  wr32(RAM_DL + 48, DISPLAY());
+        //  wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);  
+
+          wr32(RAM_DL + 0, CLEAR(1, 1, 1)); // clear screen
+
+          wr32(RAM_DL + 4, CLEAR_COLOR_RGB (5,45,110));
+          wr32(RAM_DL + 8, COLOR_RGB (255,168,64));
+          wr32(RAM_DL + 12, CLEAR(1, 1, 1));
+          
+          wr32(RAM_DL + 16, BEGIN(BITMAPS)); // start drawing bitmaps 
+          wr32(RAM_DL + 20, VERTEX2II(220, 200, 31, 'A')); // ascii F in font 31
+          wr32(RAM_DL + 24, VERTEX2II(244,  200, 31, 'R')); // ascii T 
+          wr32(RAM_DL + 28, VERTEX2II(270, 200, 31, 'M')); // ascii D 
+          wr32(RAM_DL + 32, VERTEX2II(300, 200, 31, 'A')); // ascii I
+          wr32(RAM_DL + 36, VERTEX2II(325, 200, 31, 'A'));
+          wr32(RAM_DL + 40, END());
+
+          wr32(RAM_DL + 44, COLOR_RGB(160, 22, 22)); // change colour to red
+          wr32(RAM_DL + 48, POINT_SIZE(320)); // set point size to 20 pixels in radius
+          wr32(RAM_DL + 52, BEGIN(POINTS)); // start drawing points
+          wr32(RAM_DL + 56, VERTEX2II(192, 133, 0, 0)); // red point
+          wr32(RAM_DL + 60, END());
+
+          wr32(RAM_DL + 64, COLOR_RGB(22, 160, 22)); // change colour to red
+          wr32(RAM_DL + 68, POINT_SIZE(350)); // set point size to 20 pixels in radius
+          wr32(RAM_DL + 72, BEGIN(POINTS)); // start drawing points
+          wr32(RAM_DL + 76, VERTEX2II(450, 133, 0, 0)); // red point
+          wr32(RAM_DL + 80, END());
+        
+
+          wr32(RAM_DL + 84, DISPLAY()); // display the image
+
+             wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);          // swap display lists
+            wr8(REG_PCLK + RAM_REG, 2);                       // after this display is visible on the LCD
+
+
+
+  wait_us(5000);
+
+        wait_us(5000); 
+
+        cs = 1;
   }
 }
